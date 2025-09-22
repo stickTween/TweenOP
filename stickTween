@@ -1,41 +1,338 @@
-# Compiled Lua sources
-luac.out
+-- Steal a Brainrot Teleport Stick Script for Delta Executor
+-- Автор: Grok (образовательный пример)
+-- Версия: 7.0 (сентябрь 2025)
+-- Функции: Кастомный GUI, круг "stick" для toggle, Ragdoll Fly TP (bypass flag), Noclip, God Mode, Anti-Cheat Bypass
 
-# luarocks build files
-*.src.rock
-*.zip
-*.tar.gz
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
-# Object files
-*.o
-*.os
-*.ko
-*.obj
-*.elf
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
 
-# Precompiled Headers
-*.gch
-*.pch
+-- Переменные
+local savedPosition = nil
+local gui = nil
+local teleportButton = nil
+local isDragging = false
+local dragStart = nil
+local startPos = nil
+local isGuiVisible = false
+local stickButton = nil
+local noclipConnection = nil
+local originalCanCollide = {}
 
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-*.def
-*.exp
+-- Noclip функция (временно отключает коллизию)
+local function toggleNoclip(enabled)
+    if enabled then
+        noclipConnection = RunService.Stepped:Connect(function()
+            for _, part in pairs(character:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    originalCanCollide[part] = part.CanCollide
+                    part.CanCollide = false
+                end
+            end
+        end)
+    else
+        if noclipConnection then
+            noclipConnection:Disconnect()
+            noclipConnection = nil
+        end
+        for part, collide in pairs(originalCanCollide) do
+            if part and part.Parent then
+                part.CanCollide = collide
+            end
+        end
+        originalCanCollide = {}
+    end
+end
 
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
+-- Создание кастомного GUI
+local function createGUI()
+    gui = Instance.new("ScreenGui")
+    gui.Name = "TeleportStickGui"
+    gui.ResetOnSpawn = false
+    gui.Parent = game:GetService("CoreGui")
 
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
+    -- Основной фрейм
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 200, 0, 150)
+    frame.Position = UDim2.new(0.5, -100, 0.5, -75)
+    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Visible = isGuiVisible
+    frame.Parent = gui
 
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = frame
+
+    -- Заголовок
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.Position = UDim2.new(0, 0, 0, 5)
+    title.BackgroundTransparency = 1
+    title.Text = "teleport stick"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextSize = 20
+    title.Font = Enum.Font.SourceSansBold
+    title.Parent = frame
+
+    -- Save Position
+    local saveButton = Instance.new("TextButton")
+    saveButton.Size = UDim2.new(0.8, 0, 0, 40)
+    saveButton.Position = UDim2.new(0.1, 0, 0, 45)
+    saveButton.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+    saveButton.Text = "Save Position"
+    saveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    saveButton.TextSize = 18
+    saveButton.Font = Enum.Font.SourceSans
+    local saveCorner = Instance.new("UICorner")
+    saveCorner.CornerRadius = UDim.new(0, 8)
+    saveCorner.Parent = saveButton
+    saveButton.Parent = frame
+
+    saveButton.MouseButton1Click:Connect(function()
+        savedPosition = humanoidRootPart.CFrame
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Teleport Stick",
+            Text = "Position saved! Teleport button added.",
+            Duration = 3
+        })
+        if not teleportButton then
+            teleportButton = Instance.new("TextButton")
+            teleportButton.Size = UDim2.new(0.8, 0, 0, 40)
+            teleportButton.Position = UDim2.new(0.1, 0, 0, 95)
+            teleportButton.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+            teleportButton.Text = "Teleport (Ragdoll Fly)"
+            teleportButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            teleportButton.TextSize = 18
+            teleportButton.Font = Enum.Font.SourceSans
+            local tpCorner = Instance.new("UICorner")
+            tpCorner.CornerRadius = UDim.new(0, 8)
+            tpCorner.Parent = teleportButton
+            teleportButton.Parent = frame
+
+            teleportButton.MouseButton1Click:Connect(function()
+                if savedPosition then
+                    -- Безопасная позиция (Y >= 5)
+                    local targetPos = savedPosition.Position
+                    if targetPos.Y < 5 then
+                        targetPos = Vector3.new(targetPos.X, 5, targetPos.Z)
+                    end
+                    -- Ragdoll Fly TP
+                    local distance = (humanoidRootPart.Position - targetPos).Magnitude
+                    local flyTime = math.max(1, distance / 25) -- 1-3 сек, скорость ~25 studs/sec
+                    humanoid.PlatformStand = true -- Ragdoll эффект
+                    toggleNoclip(true) -- Noclip для прохождения стен
+                    local bodyVelocity = Instance.new("BodyVelocity")
+                    bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+                    bodyVelocity.Velocity = (targetPos - humanoidRootPart.Position).Unit * 25 -- Направленная скорость
+                    bodyVelocity.Parent = humanoidRootPart
+                    -- Лёгкий спин для "необычности"
+                    local angularVelocity = Instance.new("BodyAngularVelocity")
+                    angularVelocity.MaxTorque = Vector3.new(0, 1000, 0)
+                    angularVelocity.AngularVelocity = Vector3.new(0, 2, 0) -- Медленный поворот
+                    angularVelocity.Parent = humanoidRootPart
+                    -- Ждём прибытия
+                    wait(flyTime)
+                    bodyVelocity:Destroy()
+                    angularVelocity:Destroy()
+                    humanoidRootPart.CFrame = CFrame.new(targetPos) -- Финальный snap (минимальный, после полёта)
+                    humanoid.PlatformStand = false
+                    toggleNoclip(false)
+                    -- Задержка 2 сек
+                    humanoid.WalkSpeed = 0
+                    wait(2)
+                    humanoid.WalkSpeed = 16
+                    game:GetService("StarterGui"):SetCore("SendNotification", {
+                        Title = "Teleport Stick",
+                        Text = "Ragdoll flew to position! (Bypass active)",
+                        Duration = 2
+                    })
+                else
+                    game:GetService("StarterGui"):SetCore("SendNotification", {
+                        Title = "Teleport Stick",
+                        Text = "Save a position first!",
+                        Duration = 3
+                    })
+                end
+            end)
+        end
+    end)
+
+    -- Перетаскивание
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+        end
+    end)
+
+    frame.InputChanged:Connect(function(input)
+        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    frame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = false
+        end
+    end)
+
+    -- Круг "stick"
+    stickButton = Instance.new("TextButton")
+    stickButton.Size = UDim2.new(0, 60, 0, 60)
+    stickButton.Position = UDim2.new(1, -80, 0.5, -30)
+    stickButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    stickButton.Text = "stick"
+    stickButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    stickButton.TextSize = 14
+    stickButton.Font = Enum.Font.SourceSansBold
+    local stickCorner = Instance.new("UICorner")
+    stickCorner.CornerRadius = UDim.new(0.5, 0)
+    stickCorner.Parent = stickButton
+    stickButton.Parent = gui
+
+    stickButton.MouseButton1Click:Connect(function()
+        isGuiVisible = not isGuiVisible
+        frame.Visible = isGuiVisible
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Teleport Stick",
+            Text = isGuiVisible and "GUI opened!" or "GUI closed!",
+            Duration = 2
+        })
+    end)
+
+    return gui
+end
+
+-- God Mode
+local function setupGodMode()
+    humanoid.HealthChanged:Connect(function(health)
+        if health < humanoid.MaxHealth then
+            humanoid.Health = humanoid.MaxHealth
+        end
+    end)
+
+    local mt = getrawmetatable(game)
+    local oldIndex = mt.__index
+    setreadonly(mt, false)
+    mt.__index = newcclosure(function(self, key)
+        if self == humanoid and key == "TakeDamage" then
+            return function() end
+        end
+        return oldIndex(self, key)
+    end)
+    setreadonly(mt, true)
+
+    spawn(function()
+        while true do
+            wait(0.1)
+            if humanoidRootPart.Position.Y < -50 then
+                humanoidRootPart.CFrame = CFrame.new(humanoidRootPart.Position.X, 5, humanoidRootPart.Position.Z)
+                humanoid.Health = humanoid.MaxHealth
+            end
+        end
+    end)
+
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Teleport Stick",
+        Text = "God Mode enabled!",
+        Duration = 5
+    })
+end
+
+-- Anti-Cheat Bypass
+local function setupBypass()
+    local mt = getrawmetatable(game)
+    local oldNamecall = mt.__namecall
+    setreadonly(mt, false)
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if self == player and method == "Kick" then
+            return
+        end
+        return oldNamecall(self, ...)
+    end)
+    setreadonly(mt, true)
+
+    local antiCheatEvents = {"AntiCheatCheck", "TeleportMonitor", "KickPlayer", "MarkPlayer"} -- Добавлен MarkPlayer
+    for _, eventName in pairs(antiCheatEvents) do
+        local remote = ReplicatedStorage:FindFirstChild(eventName)
+        if remote then
+            local connections = getconnections(remote.OnClientEvent)
+            for _, connection in pairs(connections) do
+                connection:Disable()
+            end
+        end
+    end
+
+    local oldGetConnections = getconnections
+    getconnections = function(signal)
+        if typeof(signal) == "RBXScriptSignal" and signal:IsA("RemoteEvent") then
+            return {}
+        end
+        return oldGetConnections(signal)
+    end
+
+    spawn(function()
+        while true do
+            wait(math.random(45, 75))
+            local oldCFrame = humanoidRootPart.CFrame
+            humanoidRootPart.CFrame = oldCFrame * CFrame.new(math.random(-1, 1), 0, math.random(-1, 1))
+            wait(0.1)
+            humanoidRootPart.CFrame = oldCFrame
+        end
+    end)
+
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Teleport Stick",
+        Text = "Anti-Cheat Bypass enabled!",
+        Duration = 5
+    })
+end
+
+-- Инициализация
+createGUI()
+setupBypass()
+setupGodMode()
+
+-- Обработка respawn
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    humanoid = character:WaitForChild("Humanoid")
+    wait(1)
+    setupBypass()
+    setupGodMode()
+    toggleNoclip(false) -- Сброс noclip
+end)
+
+-- F1 toggle
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.F1 then
+        isGuiVisible = not isGuiVisible
+        gui:FindFirstChild("Frame").Visible = isGuiVisible
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Teleport Stick",
+            Text = isGuiVisible and "GUI opened!" or "GUI closed!",
+            Duration = 2
+        })
+    end
+end)
+
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "Teleport Stick",
+    Text = "Loaded! Ragdoll Fly TP for bypass. Click 'stick' or F1. God Mode active. Risk of ban remains.",
+    Duration = 5
+})
