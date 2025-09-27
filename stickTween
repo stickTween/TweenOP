@@ -127,12 +127,12 @@ local function createGUI()
                     end
                     -- Ragdoll Fly TP
                     local distance = (humanoidRootPart.Position - targetPos).Magnitude
-                    local flyTime = math.max(1, distance / 25) -- 1-3 сек, скорость ~25 studs/sec
+                    local flyTime = math.max(1, distance / 70) -- 1-3 сек, скорость ~25 studs/sec
                     humanoid.PlatformStand = true -- Ragdoll эффект
                     toggleNoclip(true) -- Noclip для прохождения стен
                     local bodyVelocity = Instance.new("BodyVelocity")
                     bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
-                    bodyVelocity.Velocity = (targetPos - humanoidRootPart.Position).Unit * 25 -- Направленная скорость
+                    bodyVelocity.Velocity = (targetPos - humanoidRootPart.Position).Unit * 70 -- Направленная скорость
                     bodyVelocity.Parent = humanoidRootPart
                     -- Лёгкий спин для "необычности"
                     local angularVelocity = Instance.new("BodyAngularVelocity")
@@ -149,7 +149,7 @@ local function createGUI()
                     -- Задержка 2 сек
                     humanoid.WalkSpeed = 0
                     wait(2)
-                    humanoid.WalkSpeed = 16
+                    humanoid.WalkSpeed = 30
                     game:GetService("StarterGui"):SetCore("SendNotification", {
                         Title = "Teleport Stick",
                         Text = "Ragdoll flew to position! (Bypass active)",
